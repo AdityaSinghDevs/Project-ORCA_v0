@@ -15,4 +15,4 @@ Project Repository for ORCA [short for Omni-Purpose Real-time Computer-Vision Ai
 3. SOS Alerts based on visuals
 4. Facial Detection (Age, Gender)
 
-<script src="https://gist.github.com/Nivratti/ea81e952e07ffbbf03e6d44a7dbbef8f.js"></script>
+<script "https://gist.github.com/Nivratti/ea81e952e07ffbbf03e6d44a7dbbef8f.js"

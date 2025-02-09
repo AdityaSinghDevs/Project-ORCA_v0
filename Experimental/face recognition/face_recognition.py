@@ -1,3 +1,7 @@
+"""
+Needs Python version 3.8, 9, 10
+
+"""
 import cv2
 import pickle
 import numpy as np

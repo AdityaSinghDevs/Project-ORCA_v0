@@ -1,3 +1,6 @@
+#pip install --upgrade opencv-python opencv-contrib-python
+
+
 import os
 import sys
 import glob

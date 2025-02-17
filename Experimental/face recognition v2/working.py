@@ -6,6 +6,10 @@ import math
 import cv2
 import numpy as np
 from tqdm import tqdm
+from playsound import playsound
+
+
+#as of now it only alerts when any unknown person comes and only once.
 
 COSINE_THRESHOLD = 0.5
 
@@ -72,6 +76,7 @@ def main():
     weights = os.path.join(directory, "models", "face_recognition_sface_2021dec_int8bq.onnx")
     face_recognizer = cv2.FaceRecognizerSF_create(weights, "")
 
+    detected_unknowns = set()
     # Get registered photos and return as npy files
     # File name = id name, embeddings of a photo is the representative for the id
     # If many files have the same name, an average embedding is used
@@ -116,7 +121,14 @@ def main():
             thickness = 2
             cv2.rectangle(image, box, color, thickness, cv2.LINE_AA)
 
-            id_name, score = user if result else (f"unknown_{idx}", 0.0)
+            if result:
+                id_name, score = user
+            else:
+                id_name, score = f"unknown_{idx}", 0.0
+                if id_name not in detected_unknowns:
+                    playsound("beep.mp3")
+                    detected_unknowns.add(id_name)  
+
             text = "{0} ({1:.2f})".format(id_name, score)
             position = (box[0], box[1] - 10)
             font = cv2.FONT_HERSHEY_SIMPLEX

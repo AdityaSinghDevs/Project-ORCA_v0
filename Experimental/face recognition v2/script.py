@@ -45,12 +45,12 @@ def recognize_face(image, face_detector, face_recognizer, file_name=None):
 
         faces = faces if faces is not None else []
         features = []
-        print(f'time detection  = {time.time() - dts}')
+        # print(f'time detection  = {time.time() - dts}')
         for face in faces:
             rts = time.time()
             aligned_face = face_recognizer.alignCrop(image, face)
             feat = face_recognizer.feature(aligned_face)
-            print(f'time recognition  = {time.time() - rts}')
+            # print(f'time recognition  = {time.time() - rts}')
             features.append(feat)
         return features, faces, aligned_face
     except Exception as e:
@@ -125,7 +125,7 @@ def main():
     unknown_dict = load_unknown_faces()
     dictionary.update(unknown_dict)
     
-    print(f'there are {len(dictionary)} ids (including unknowns)')
+    # print(f'there are {len(dictionary)} ids (including unknowns)')
     
     # Keep track of the next available unknown ID
     next_unknown_id = len(unknown_dict) + 1
@@ -179,7 +179,7 @@ def main():
         if key == ord('q'):
             break
         end_hand = time.time()
-        print(f'speed of a loop = {end_hand - start_hand} means {1/(end_hand - start_hand)} frames per second')
+        # print(f'speed of a loop = {end_hand - start_hand} means {1/(end_hand - start_hand)} frames per second')
 
     cv2.destroyAllWindows()
 

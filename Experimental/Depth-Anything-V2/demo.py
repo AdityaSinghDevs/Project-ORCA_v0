@@ -14,7 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera-id', type=int, default=0, help='Camera device ID (usually 0 for built-in webcam)')
     parser.add_argument('--save-video', action='store_true', help='Save the output video')
     
-    parser.add_argument('--encoder', type=str, default='vitl', choices=['vits', 'vitb', 'vitl', 'vitg'])
+    parser.add_argument('--encoder', type=str, default='vits', choices=['vits', 'vitb', 'vitl', 'vitg'])
     
     parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
     parser.add_argument('--grayscale', dest='grayscale', action='store_true', help='do not apply colorful palette')

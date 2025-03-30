@@ -2,22 +2,22 @@
 Needs Python version 3.8, 9, 10
 
 """
-<<<<<<< HEAD
-import cv2
-import numpy as np
+
+import cv2 # type: ignore
+import numpy as np # type: ignore
 import os
 import pickle
 import time
-from deepface import DeepFace
+from deepface import DeepFace # type: ignore
 import winsound
 
-=======
+
 import cv2 # type: ignore
 import pickle
 import numpy as np # type: ignore
 from deepface import DeepFace # type: ignore
 from scipy.spatial.distance import cosine # type: ignore
->>>>>>> d865dff (WIP: Added Sface and YuNet for face recognition and face detection respectively)
+
 
 # Load trained classifier and label encoder
 with open("face_classifier.pkl", "rb") as f:

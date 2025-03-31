@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Video Stream</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #181818;
+            color: #EFEFEF;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #stream-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+        }
+
+        #stream {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            display: block;
+        }
+
+        #toggle-button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #ff3034;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        #toggle-button:hover {
+            background: #ff494d;
+        }
+
+        #toggle-button:active {
+            background: #f21c21;
+        }
+
+        #toggle-button.off {
+            background: #4CAF50;
+        }
+
+        #toggle-button.off:hover {
+            background: #45a049;
+        }
+
+        #toggle-button.off:active {
+            background: #3d8b40;
+        }
+    </style>
+</head>
+<body>
+    <div id="stream-container">
+        <img id="stream" src="http://192.168.0.102:81/stream" alt="Video Stream">
+    </div>
+
+    <script>
+        let isStreaming = false;
+        const streamImg = document.getElementById('stream');
+        const toggleButton = document.getElementById('toggle-button');
+        let streamInterval;
+
+        function startStream() {
+            isStreaming = true;
+            toggleButton.textContent = 'Stop Stream';
+            toggleButton.classList.add('off');
+            
+            // Update the image source every 100ms
+            streamInterval = setInterval(() => {
+                streamImg.src = '/video_feed?' + new Date().getTime();
+            }, 100);
+        }
+
+        function stopStream() {
+            isStreaming = false;
+            toggleButton.textContent = 'Start Stream';
+            toggleButton.classList.remove('off');
+            clearInterval(streamInterval);
+        }
+
+        toggleButton.addEventListener('click', () => {
+            if (isStreaming) {
+                stopStream();
+            } else {
+                startStream();
+            }
+        });
+    </script>
+</body>
+</html> 

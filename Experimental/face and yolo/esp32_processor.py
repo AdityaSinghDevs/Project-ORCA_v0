@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from script import CombinedDetector
+from updated_script import CombinedDetector
 import time
 
 def main():
@@ -8,7 +8,7 @@ def main():
     detector = CombinedDetector(enable_sound=True)
     
     # ESP32-CAM stream URL
-    stream_url = "http://192.168.118.200:81/stream"
+    stream_url = "http://192.168.50.200:81/stream"
     
     # Create video capture object
     cap = cv2.VideoCapture(stream_url)

@@ -1,8 +1,3 @@
-#requirements:
-#pip install git+https://github.com/THU-MIG/yolov10.git
-#pip install huggingface_hub
-
-
 
 from ultralytics import YOLOv10
 import cv2  

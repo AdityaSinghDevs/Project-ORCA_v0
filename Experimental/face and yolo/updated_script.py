@@ -1,3 +1,4 @@
+
 import os
 import sys
 import glob
@@ -7,27 +8,49 @@ import cv2
 import numpy as np
 import shutil
 import platform
+import json
+import contextlib
 from tqdm import tqdm
 from datetime import datetime
-from nanodet import NanoDet
+from ultralytics import YOLOv10
 
 class CombinedDetector:
-    def __init__(self, enable_sound=True):
+    def __init__(self, enable_sound=True, calibration_file="camera_calibration.json"):
         self.directory = 'data'
         self.COSINE_THRESHOLD = 0.5
         self.temp_unknown_dir = os.path.join(self.directory, 'temp_unknown_faces')
         self.enable_sound = enable_sound
         
-        # Setup sound based on platform
+        # Known widths for distance estimation
+        self.KNOWN_WIDTH = {
+            'person': 60,
+            'car': 180,
+            'bottle': 8,
+            'chair': 50,
+            'laptop': 35,
+            'cell phone': 7,
+        }
+        self.DEFAULT_WIDTH = 30  # cm
+        
+        # Load calibration data
+        self.load_calibration(calibration_file)
+        
+        # Setup components
         if self.enable_sound:
             self.setup_sound()
-
         self.setup_face_detection()
         self.setup_object_detection()
         self.setup_temp_directory()
         self.load_face_dictionary()
         self.next_unknown_id = 1
         self.detected_unknowns = set()
+        
+        # Colors for object visualization
+        self.COLORS = np.random.uniform(0, 255, size=(80, 3))
+        
+        # Verbose mode flags
+        self.verbose_mode = False
+        self.model_verbose = False
 
     def setup_sound(self):
         """Setup sound based on platform"""
@@ -35,23 +58,21 @@ class CombinedDetector:
         if self.system == 'Windows':
             try:
                 import winsound
-                self.sound_function = lambda: winsound.Beep(1000, 700)  # 1000Hz for 700ms
+                self.sound_function = lambda: winsound.Beep(1000, 500)
                 self.sound_available = True
             except Exception as e:
                 print(f"Warning: Could not initialize Windows sound: {e}")
                 self.sound_available = False
-        elif self.system == 'Darwin':  # macOS
+        elif self.system == 'Darwin':
             self.sound_function = lambda: os.system('afplay /System/Library/Sounds/Ping.aiff')
             self.sound_available = True
         elif self.system == 'Linux':
-            # Try to use console bell
             self.sound_function = lambda: print('\a', flush=True)
             self.sound_available = True
         else:
             print(f"Warning: Sound not supported on {self.system}")
             self.sound_available = False
 
-    
     def play_notification(self):
         """Safely play notification sound if enabled and available"""
         if self.enable_sound and self.sound_available:
@@ -62,11 +83,13 @@ class CombinedDetector:
                 self.sound_available = False
 
     def setup_temp_directory(self):
+        """Create or clean temporary directory for unknown faces"""
         if os.path.exists(self.temp_unknown_dir):
             shutil.rmtree(self.temp_unknown_dir)
         os.makedirs(self.temp_unknown_dir)
 
     def setup_face_detection(self):
+        """Initialize face detection and recognition models"""
         weights = os.path.join(self.directory, "models", "face_detection_yunet_2023mar.onnx")
         self.face_detector = cv2.FaceDetectorYN_create(weights, "", (0, 0))
         self.face_detector.setScoreThreshold(0.87)
@@ -75,31 +98,11 @@ class CombinedDetector:
         self.face_recognizer = cv2.FaceRecognizerSF_create(weights, "")
 
     def setup_object_detection(self):
-        # Replace YOLOv10 with NanoDetect
-        model_path = os.path.join(self.directory, "models", "object_detection_nanodet_2022nov_int8bq.onnx")
-        self.nanodet_model = NanoDet(modelPath=model_path, 
-                                       prob_threshold=0.35, 
-                                       iou_threshold=0.6, 
-                                       backend_id=cv2.dnn.DNN_BACKEND_OPENCV, 
-                                       target_id=cv2.dnn.DNN_TARGET_CPU)
-        
-        # Define class names for NanoDetect
-        self.class_names = ('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-                  'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
-                  'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog',
-                  'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe',
-                  'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-                  'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat',
-                  'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-                  'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
-                  'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot',
-                  'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-                  'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
-                  'mouse', 'remote', 'keyboard', 'cell phone', 'microwave',
-                  'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock',
-                  'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush')
+        """Initialize YOLOv10 model for object detection"""
+        self.yolo_model = YOLOv10.from_pretrained('jameslahm/yolov10n')
 
     def load_face_dictionary(self):
+        """Load registered faces from image files"""
         self.dictionary = {}
         types = ('*.jpg', '*.png', '*.jpeg', '*.JPG', '*.PNG', '*.JPEG')
         files = []
@@ -117,7 +120,31 @@ class CombinedDetector:
 
         print(f'Total {len(self.dictionary)} registered IDs loaded')
 
+    def load_calibration(self, filename="camera_calibration.json"):
+        """Load camera calibration data from file"""
+        try:
+            with open(filename, 'r') as f:
+                calibration_data = json.load(f)
+                
+            self.FOCAL_LENGTH = calibration_data.get("focal_length")
+            loaded_widths = calibration_data.get("known_widths", {})
+            if loaded_widths:
+                self.KNOWN_WIDTH.update(loaded_widths)
+            
+            print(f"Calibration loaded from {filename}")
+            print(f"Focal length: {self.FOCAL_LENGTH}")
+            return True
+        except FileNotFoundError:
+            print(f"Calibration file {filename} not found.")
+            self.FOCAL_LENGTH = None
+            return False
+        except Exception as e:
+            print(f"Error loading calibration: {e}")
+            self.FOCAL_LENGTH = None
+            return False
+
     def match(self, feature1):
+        """Match face feature against dictionary"""
         max_score = 0.0
         sim_user_id = ""
         for user_id, feature2 in zip(self.dictionary.keys(), self.dictionary.values()):
@@ -131,6 +158,7 @@ class CombinedDetector:
         return True, (sim_user_id, max_score)
 
     def recognize_face(self, image, file_name=None):
+        """Perform face detection and feature extraction"""
         channels = 1 if len(image.shape) == 2 else image.shape[2]
         if channels == 1:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -162,6 +190,7 @@ class CombinedDetector:
             return None, None, None
 
     def save_unknown_face(self, image, face_box, aligned_face, features, unknown_id):
+        """Save unknown face image and features"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_filename = f"unknown_{unknown_id}_{timestamp}.jpg"
         image_path = os.path.join(self.temp_unknown_dir, image_filename)
@@ -173,51 +202,19 @@ class CombinedDetector:
         
         return image_path
 
-    def letterbox(self, srcimg, target_size=(416, 416)):
-        # Add the letterbox function from NanoDetect demo
-        img = srcimg.copy()
-
-        top, left, newh, neww = 0, 0, target_size[0], target_size[1]
-        if img.shape[0] != img.shape[1]:
-            hw_scale = img.shape[0] / img.shape[1]
-            if hw_scale > 1:
-                newh, neww = target_size[0], int(target_size[1] / hw_scale)
-                img = cv2.resize(img, (neww, newh), interpolation=cv2.INTER_AREA)
-                left = int((target_size[1] - neww) * 0.5)
-                img = cv2.copyMakeBorder(img, 0, 0, left, target_size[1] - neww - left, cv2.BORDER_CONSTANT, value=0)
-            else:
-                newh, neww = int(target_size[0] * hw_scale), target_size[1]
-                img = cv2.resize(img, (neww, newh), interpolation=cv2.INTER_AREA)
-                top = int((target_size[0] - newh) * 0.5)
-                img = cv2.copyMakeBorder(img, top, target_size[0] - newh - top, 0, 0, cv2.BORDER_CONSTANT, value=0)
-        else:
-            img = cv2.resize(img, target_size, interpolation=cv2.INTER_AREA)
-
-        letterbox_scale = [top, left, newh, neww]
-        return img, letterbox_scale
-
-    def unletterbox(self, bbox, original_image_shape, letterbox_scale):
-        # Add the unletterbox function from NanoDetect demo
-        ret = bbox.copy()
-
-        h, w = original_image_shape
-        top, left, newh, neww = letterbox_scale
-
-        if h == w:
-            ratio = h / newh
-            ret = ret * ratio
-            return ret
-
-        ratioh, ratiow = h / newh, w / neww
-        ret[0] = max((ret[0] - left) * ratiow, 0)
-        ret[1] = max((ret[1] - top) * ratioh, 0)
-        ret[2] = min((ret[2] - left) * ratiow, w)
-        ret[3] = min((ret[3] - top) * ratioh, h)
-
-        return ret.astype(np.int32)
+    def estimate_distance(self, object_width_pixels, class_name):
+        """Estimate distance based on object width in pixels"""
+        if self.FOCAL_LENGTH is None:
+            return None
+        
+        known_width = self.KNOWN_WIDTH.get(class_name, self.DEFAULT_WIDTH)
+        distance = (known_width * self.FOCAL_LENGTH) / object_width_pixels
+        return distance
 
     def process_frame(self, frame):
+        """Process a frame for face detection/recognition and object detection/distance estimation"""
         start_time = time.time()
+        annotated_frame = frame.copy()
         
         # Face Detection and Recognition
         features, faces, aligned_face = self.recognize_face(frame)
@@ -227,7 +224,7 @@ class CombinedDetector:
                 box = list(map(int, face[:4]))
                 color = (0, 255, 0) if result else (0, 0, 255)
                 thickness = 2
-                cv2.rectangle(frame, box, color, thickness, cv2.LINE_AA)
+                cv2.rectangle(annotated_frame, box, color, thickness, cv2.LINE_AA)
 
                 if result:
                     id_name, score = user
@@ -243,42 +240,75 @@ class CombinedDetector:
 
                 text = f"{id_name} ({score:.2f})"
                 position = (box[0], box[1] - 10)
-                cv2.putText(frame, text, position, cv2.FONT_HERSHEY_SIMPLEX, 
+                cv2.putText(annotated_frame, text, position, cv2.FONT_HERSHEY_SIMPLEX, 
                            0.6, color, thickness, cv2.LINE_AA)
 
-        # Object Detection with NanoDetect
-        # Convert to RGB for NanoDetect
-        input_blob = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Apply letterbox transformation
-        input_blob, letterbox_scale = self.letterbox(input_blob)
-        
-        # Run inference
-        preds = self.nanodet_model.infer(input_blob)
-        
-        # Draw bounding boxes for detected objects
-        if len(preds) > 0:
-            for pred in preds:
-                bbox = pred[:4]
-                conf = pred[-2]
-                class_id = int(pred[-1])
-                
-                # Convert bbox from letterbox coordinates to original image coordinates
-                xmin, ymin, xmax, ymax = self.unletterbox(bbox, frame.shape[:2], letterbox_scale)
-                
-                # Draw bounding box
-                cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (255, 0, 0), 2)
-                
-                # Draw label
-                label = f"{self.class_names[class_id]}: {conf:.2f}"
-                cv2.putText(frame, label, (xmin, ymin - 10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        # Object Detection and Distance Estimation
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        try:
+            if not self.model_verbose:
+                with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f):
+                    results = self.yolo_model(frame_rgb, verbose=False)
+            else:
+                results = self.yolo_model(frame_rgb)
+        except Exception as e:
+            print(f"Error during object detection: {e}")
+            results = []
 
+        for detection in results:
+            if len(detection.boxes) == 0:
+                continue
+                
+            try:
+                boxes = detection.boxes.xyxy.cpu().numpy()
+                scores = detection.boxes.conf.cpu().numpy()
+                class_ids = detection.boxes.cls.cpu().numpy().astype(int)
+            except (IndexError, AttributeError):
+                continue
+            
+            for i, box in enumerate(boxes):
+                class_id = class_ids[i]
+                class_name = self.yolo_model.names[class_id]
+                confidence = scores[i]
+                
+                if confidence < 0.5:
+                    continue
+                
+                x1, y1, x2, y2 = map(int, box)
+                object_width_pixels = x2 - x1
+                
+                color = tuple(map(int, self.COLORS[class_id % len(self.COLORS)]))
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                
+                distance_text = "Unknown"
+                if self.FOCAL_LENGTH is not None:
+                    distance = self.estimate_distance(object_width_pixels, class_name)
+                    if distance is not None:
+                        distance_text = f"{distance:.2f} cm"
+                
+                label = f"{class_name}: {confidence:.2f}, Dist: {distance_text}"
+                label_size, baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                y1 = max(y1, label_size[1])
+                
+                cv2.rectangle(annotated_frame, (x1, y1 - label_size[1]), (x1 + label_size[0], y1), color, -1)
+                cv2.putText(annotated_frame, label, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
+        # Display FPS
         fps = 1.0 / (time.time() - start_time)
-        cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), 
+        cv2.putText(annotated_frame, f"FPS: {fps:.2f}", (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        return frame
+        return annotated_frame
+
+    def toggle_verbose(self):
+        """Toggle verbose output mode"""
+        self.verbose_mode = not self.verbose_mode
+        print(f"Verbose mode {'ON' if self.verbose_mode else 'OFF'}")
+
+    def toggle_model_verbose(self):
+        """Toggle model output verbose mode"""
+        self.model_verbose = not self.model_verbose
+        print(f"Model verbose mode {'ON' if self.model_verbose else 'OFF'}")
 
     def cleanup(self):
         """Clean up temporary files and directories"""
@@ -287,11 +317,20 @@ class CombinedDetector:
             print("Cleaned up temporary unknown faces")
 
     def run(self):
+        """Run the combined detection system"""
         try:
             capture = cv2.VideoCapture(0)
             if not capture.isOpened():
                 print("Error: Could not open camera")
                 return
+
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 768)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 432)
+
+            print("=== Combined Detection System ===")
+            print("Press 'v' to toggle verbose mode")
+            print("Press 'm' to toggle model output")
+            print("Press 'q' to quit")
 
             while True:
                 ret, frame = capture.read()
@@ -301,8 +340,13 @@ class CombinedDetector:
                 processed_frame = self.process_frame(frame)
                 cv2.imshow("Combined Detection", processed_frame)
 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
                     break
+                elif key == ord('v'):
+                    self.toggle_verbose()
+                elif key == ord('m'):
+                    self.toggle_model_verbose()
 
         finally:
             capture.release()
@@ -310,7 +354,6 @@ class CombinedDetector:
             self.cleanup()
 
 def main():
-    # Initialize with sound enabled by default
     detector = CombinedDetector(enable_sound=True)
     detector.run()
 

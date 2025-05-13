@@ -16,7 +16,7 @@ import pyttsx3
 from threading import Thread
 
 class CombinedDetector:
-    def __init__(self, enable_sound=True, calibration_file="camera_calibration.json", notification_cooldown=5.0):
+    def __init__(self, enable_sound=True, calibration_file="camera_calibration_esp.json", notification_cooldown=5.0):
         self.directory = 'data'
         self.COSINE_THRESHOLD = 0.5
         self.temp_unknown_dir = os.path.join(self.directory, 'temp_unknown_faces')
@@ -651,12 +651,47 @@ class CombinedDetector:
             cv2.destroyAllWindows()
             self.cleanup()
 
+    def run_from_stream(self, stream_url):
+        """Run the combined detection system from a video stream"""
+        try:
+            cap = cv2.VideoCapture(stream_url)
+
+            if not cap.isOpened():
+                print("Error: Could not open video stream")
+                return
+
+            print("Successfully connected to video stream")
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print("Error: Could not read frame")
+                    break
+
+                processed_frame = self.process_frame(frame)
+                cv2.imshow("Stream Detection System", processed_frame)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+        except KeyboardInterrupt:
+            print("\nStopping the stream...")
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
+            self.cleanup()
+
 def main():
     # Use 5.0 seconds as the notification cooldown period
     print("Initializing Enhanced Detection System...")
     print("Will announce persons and objects only when they first appear or reappear")
     detector = CombinedDetector(enable_sound=True, notification_cooldown=5.0)
-    detector.run()
+
+    # ESP32-CAM stream URL
+    stream_url = "http://192.168.169.200:81/stream"
+
+    # Run from stream
+    detector.run_from_stream(stream_url)
 
 if __name__ == '__main__':
     main()

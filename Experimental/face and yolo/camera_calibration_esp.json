@@ -1,0 +1,13 @@
+{
+    "focal_length": 356.9816589355469,
+    "calibration_object": "bottle",
+    "known_distance": 100,
+    "known_widths": {
+        "person": 60,
+        "car": 180,
+        "bottle": 8,
+        "chair": 50,
+        "laptop": 35,
+        "cell phone": 7
+    }
+}

@@ -12,8 +12,8 @@ import contextlib
 from tqdm import tqdm
 from datetime import datetime
 from ultralytics import YOLOv10
-import pyttsx3
-from threading import Thread
+import pyttsx3  # Added for text-to-speech
+from threading import Thread  # Added for non-blocking TTS
 
 class CombinedDetector:
     def __init__(self, enable_sound=True, calibration_file="camera_calibration.json", notification_cooldown=5.0):
@@ -21,13 +21,13 @@ class CombinedDetector:
         self.COSINE_THRESHOLD = 0.5
         self.temp_unknown_dir = os.path.join(self.directory, 'temp_unknown_faces')
         self.enable_sound = enable_sound
-
+        
         # Notification cooldown time in seconds
         self.notification_cooldown = notification_cooldown
-
+        
         # Last notification timestamp - now separate for different entities
         self.last_global_notification_time = 0
-
+        
         # Last person name spoken - to avoid repeating within the time frame
         self.last_person_announced = None
 
@@ -67,21 +67,21 @@ class CombinedDetector:
 
         # Face tracking for persistent detection
         self.face_tracking = {}  # Dictionary to track faces and their detection time
-
+        
         # Track all notifications (both faces and objects)
         self.notifications = {
             "faces": {},  # {face_id: last_notification_time}
             "objects": {}  # {object_id: last_notification_time}
         }
-
+        
         # Track currently visible faces and objects
         self.currently_visible_faces = set()
         self.previously_visible_faces = set()
-
+        
         # Track currently visible objects
         self.currently_visible_objects = set()
         self.previously_visible_objects = set()
-
+        
         # Timeout values for reappearance (seconds)
         self.face_reappear_timeout = 3.0
         self.object_reappear_timeout = 3.0
@@ -96,22 +96,22 @@ class CombinedDetector:
     def speak_text(self, text, force=False):
         """
         Speak text in a non-blocking way
-
+        
         Args:
             text: Text to speak
             force: If True, speak regardless of cooldown
         """
         current_time = time.time()
-
+        
         # IMPORTANT: Person detections should always be announced
         is_person_announcement = "person detected" in text.lower()
-
+        
         # Skip global cooldown for person announcements
         if not force and not is_person_announcement and (current_time - self.last_global_notification_time < self.notification_cooldown):
             if self.verbose_mode:
                 print(f"Notification skipped: {text} (cooldown active)")
             return False
-
+            
         # Add to queue if TTS engine is busy
         if self.tts_busy:
             if self.verbose_mode:
@@ -122,28 +122,28 @@ class CombinedDetector:
         def speak_worker():
             self.tts_busy = True
             current_text = text
-
+            
             while True:
                 if self.verbose_mode:
                     print(f"TTS: {current_text}")
                 self.tts_engine.say(current_text)
                 self.tts_engine.runAndWait()
-
+                
                 # Check if there are more items in the queue
                 if self.speech_queue:
                     current_text = self.speech_queue.pop(0)
                 else:
                     break
-
+                    
             self.tts_busy = False
 
         # Only update global notification time for non-person announcements
         if not is_person_announcement:
             self.last_global_notification_time = current_time
-
+        
         if self.verbose_mode:
             print(f"Speaking notification: {text}")
-
+            
         tts_thread = Thread(target=speak_worker)
         tts_thread.daemon = True
         tts_thread.start()
@@ -173,18 +173,18 @@ class CombinedDetector:
     def play_notification(self, is_person=False):
         """
         Safely play notification sound if enabled and available
-
+        
         Args:
             is_person: If True, bypass global cooldown for person notifications
         """
         current_time = time.time()
-
+        
         # Check global notification cooldown, but bypass for person detections
         if not is_person and current_time - self.last_global_notification_time < self.notification_cooldown:
             if self.verbose_mode:
                 print("Sound notification skipped (cooldown active)")
             return False
-
+            
         if self.enable_sound and self.sound_available:
             try:
                 self.sound_function()
@@ -330,42 +330,42 @@ class CombinedDetector:
     def can_notify(self, entity_type, entity_id):
         """
         Check if an entity can be notified based on cooldown rules
-
+        
         Args:
             entity_type: Either "faces" or "objects"
             entity_id: Unique identifier for the entity
-
+            
         Returns:
             bool: True if notification is allowed, False otherwise
         """
         current_time = time.time()
-
+        
         # For faces, always allow notification (we want to announce all detected people)
         if entity_type == "faces":
             return True
-
+        
         # For objects, check global notification cooldown
         if current_time - self.last_global_notification_time < self.notification_cooldown:
             return False
-
+            
         # Check specific entity cooldown for objects
         if entity_id in self.notifications[entity_type]:
             last_time = self.notifications[entity_type][entity_id]
             if current_time - last_time < self.notification_cooldown:
                 return False
-
+                
         return True
 
     def mark_notified(self, entity_type, entity_id):
         """
         Mark an entity as having been notified
-
+        
         Args:
             entity_type: Either "faces" or "objects"
             entity_id: Unique identifier for the entity
         """
         self.notifications[entity_type][entity_id] = time.time()
-
+        
         # Only update global notification time for non-face entities
         if entity_type != "faces":
             self.last_global_notification_time = time.time()
@@ -373,7 +373,7 @@ class CombinedDetector:
     def check_face_persistence(self, face_id, is_known, current_time):
         """
         Check if a face has been consistently detected and is ready for notification
-
+        
         Returns:
             bool: True if the face should be announced, False otherwise
         """
@@ -394,12 +394,12 @@ class CombinedDetector:
 
         # Check if face has been visible for at least 1 second (to avoid false positives)
         time_visible = current_time - self.face_tracking[face_id]['first_seen']
-
+        
         # If the face has been visible for the minimum time and hasn't been announced yet,
         # or if it reappeared after being gone
         if time_visible >= 1.0:
             return True
-
+            
         return False
 
     def cleanup_face_tracking(self, current_time, timeout=3.0):
@@ -417,11 +417,11 @@ class CombinedDetector:
         start_time = time.time()
         current_time = time.time()
         annotated_frame = frame.copy()
-
+        
         # Store previously visible entities before updating
         self.previously_visible_faces = self.currently_visible_faces.copy()
         self.previously_visible_objects = self.currently_visible_objects.copy()
-
+        
         # Clear currently visible lists to rebuild them
         self.currently_visible_faces.clear()
         self.currently_visible_objects.clear()
@@ -442,13 +442,13 @@ class CombinedDetector:
                 if result:
                     id_name, score = user
                     is_known = True
-
+                    
                     # Add to currently visible faces
                     self.currently_visible_faces.add(id_name)
-
+                    
                     # Check if this is a new appearance (not in previous frame)
                     is_new_appearance = id_name not in self.previously_visible_faces
-
+                    
                     # Check if face has been consistently detected (to avoid false positives)
                     if is_new_appearance and self.check_face_persistence(id_name, is_known, current_time):
                         # Announce known person with name
@@ -459,14 +459,14 @@ class CombinedDetector:
                     id_name = f"unknown_{self.next_unknown_id}"
                     score = 0.0
                     is_known = False
-
+                    
                     # For unknown faces, we want to use a different tracking approach
                     # since we're generating new IDs for them
-
+                    
                     # Add to currently visible faces using a generic "unknown" marker
                     unknown_marker = "unknown_face"
                     self.currently_visible_faces.add(unknown_marker)
-
+                    
                     if id_name not in self.detected_unknowns:
                         # Check if this unknown face has been consistently detected
                         if self.check_face_persistence(unknown_marker, is_known, current_time):
@@ -535,13 +535,13 @@ class CombinedDetector:
 
                 # Object announcement logic
                 object_id = f"{class_name}_{i}"  # Unique ID for this detection
-
+                
                 # Add to currently visible objects
                 self.currently_visible_objects.add(class_name)
-
+                
                 # Check if this is a new appearance
                 is_new_appearance = class_name not in self.previously_visible_objects
-
+                
                 # Skip person announcements from YOLO as they'll be handled by face detection
                 if class_name != "person":
                     # Only announce on first appearance
@@ -550,7 +550,7 @@ class CombinedDetector:
                             notification_text = f"{class_name} detected at {distance_text}"
                         else:
                             notification_text = f"{class_name} detected"
-
+                            
                         if self.speak_text(notification_text):
                             self.mark_notified("objects", class_name)
 
@@ -558,16 +558,16 @@ class CombinedDetector:
         fps = 1.0 / (time.time() - start_time)
         cv2.putText(annotated_frame, f"FPS: {fps:.2f}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
+                    
         # Display time since last notification (only for objects)
         time_since_notification = current_time - self.last_global_notification_time
         cooldown_status = "READY" if time_since_notification >= self.notification_cooldown else f"{self.notification_cooldown - time_since_notification:.1f}s"
         cv2.putText(annotated_frame, f"Object Notification: {cooldown_status}", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
+                    
         # Display detected faces count
         face_count = len(faces) if faces is not None else 0
-        cv2.putText(annotated_frame, f"Faces: {face_count}", (10, 90),
+        cv2.putText(annotated_frame, f"Faces: {face_count}", (10, 90), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
         # Display visibility info
@@ -576,7 +576,7 @@ class CombinedDetector:
             current_faces_text = current_faces_text[:37] + "..."
         cv2.putText(annotated_frame, f"Current faces: {current_faces_text}", (10, 120),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 200, 0), 2)
-
+                    
         return annotated_frame
 
     def toggle_verbose(self):
@@ -588,7 +588,7 @@ class CombinedDetector:
         """Toggle model output verbose mode"""
         self.model_verbose = not self.model_verbose
         print(f"Model verbose mode {'ON' if self.model_verbose else 'OFF'}")
-
+        
     def change_notification_cooldown(self, seconds):
         """Change the notification cooldown period"""
         self.notification_cooldown = max(1.0, float(seconds))

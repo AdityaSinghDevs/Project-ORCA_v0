@@ -115,7 +115,7 @@ class CombinedDetector:
             feats, faces, _ = self.recognize_face(image, file)
             if faces is None:
                 continue
-            user_id = os.path.splitext(os.path.basename(file))[0]
+            user_id = os.path.splitext(os.path.basename(file))[0].strip()
             self.dictionary[user_id] = feats[0]
 
         print(f'Total {len(self.dictionary)} registered IDs loaded')
